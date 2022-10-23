@@ -12,6 +12,7 @@ use actix_session::{
 };
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::http_client;
+use oauth2::reqwest::async_http_client;
 use oauth2::{
     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
     RedirectUrl, Scope, TokenResponse, TokenUrl, PkceCodeChallenge
@@ -22,6 +23,8 @@ struct AppState {
 }
 async fn index(session: Session) -> HttpResponse {
     let access_token = session.get::<String>("access_token").unwrap();
+   
+
     let link = if access_token.is_some() { "logout" } else { "login" };
 
     let html = format!(
@@ -41,22 +44,14 @@ async fn index(session: Session) -> HttpResponse {
 
 async fn login(data: web::Data<AppState>) -> HttpResponse {
 
-    let (pkce_code_challenge, _pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
-    // Generate the authorization URL to which we'll redirect the user.
-    let (auth_url, _csrf_token) = &data
-        .oauth
+        let (authorize_url, csrf_state) = &data.oauth
         .authorize_url(CsrfToken::new_random)
-        // Set the desired scopes.
-        .add_scope(Scope::new("read_user".to_string()))
-        // Set the PKCE code challenge.
-        .set_pkce_challenge(pkce_code_challenge)
+        // This example is requesting access to the user's public repos and email.
+        .add_scope(Scope::new("public_repo".to_string()))
+        .add_scope(Scope::new("user:email".to_string()))
         .url();
-        println!(
-            "Open this URL in your browser:\n{}\n",
-            auth_url.to_string()
-        );
     HttpResponse::Found()
-        .append_header((header::LOCATION, auth_url.to_string()))
+        .append_header((header::LOCATION, authorize_url.to_string()))
         .finish()
        // HttpResponse::Ok().body(format!("username:"))
 }
@@ -80,28 +75,48 @@ async fn auth(
 ) -> HttpResponse {
     let code = AuthorizationCode::new(params.code.clone());
     let _state = CsrfToken::new(params.state.clone());
-
+let access_token;
     // Exchange the code with a token.
-    let token = &data.oauth
+    let token_res = &data.oauth
         .exchange_code(code)
-        .request(http_client)
-        .expect("exchange_code failed");
-
+        .request_async(async_http_client)
+        .await;
+        if let Ok(token) = token_res {
+            access_token=token.access_token().clone().secret().to_string();
+            session.insert("access_token", access_token.clone()).unwrap();
+            //access_token.secret().to;
+            let html = format!(
+                r#"<html>
+                <head><title>OAuth2 Test</title></head>
+                <body>
+                    Gitlab user info:
+                    <pre>{}</pre>
+                    <a href="/">Home</a>
+                </body>
+            </html>"#,
+            access_token
+            //token.access_token().clone().secret()
+            //code.secret()
+            );
+            HttpResponse::Ok().body(html)
+        }else{
+            let html = format!(
+                r#"<html>
+                <head><title>OAuth2 Test</title></head>
+                <body>
+                    Gitlab user info:
+                    <pre></pre>
+                    <a href="/">Home</a>
+                </body>
+            </html>"#,);
+            HttpResponse::Ok().body(html)
+        }
+//token.
     //let user_info = read_user(&data.api_base_url, token.access_token());
-    session.insert("access_token", token.access_token().clone()).unwrap();
+    //session.insert("access_token", token.access_token()).unwrap();
    
 
-    let html = format!(
-        r#"<html>
-        <head><title>OAuth2 Test</title></head>
-        <body>
-            Gitlab user info:
-            <pre></pre>
-            <a href="/">Home</a>
-        </body>
-    </html>"#,
-    );
-    HttpResponse::Ok().body(html)
+    
 }
 
 #[actix_rt::main]
