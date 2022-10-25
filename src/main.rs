@@ -2,22 +2,20 @@ use {
     actix_web::{web, App,HttpResponse, HttpServer,cookie::{self, Key},},
     
     actix_web::http::header,
-   
 };
 use serde::{
     Deserialize
 };
+use serde_json::value::Value;
 use actix_session::{
     config::PersistentSession, storage::CookieSessionStore, Session, SessionMiddleware,
 };
 use oauth2::basic::BasicClient;
-use oauth2::reqwest::http_client;
 use oauth2::reqwest::async_http_client;
 use oauth2::{
     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
-    RedirectUrl, Scope, TokenResponse, TokenUrl, PkceCodeChallenge
+    RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
-
 struct AppState {
     oauth: BasicClient,
 }
@@ -62,11 +60,103 @@ async fn logout(session: Session) -> HttpResponse {
         .append_header((header::LOCATION, "/".to_string()))
         .finish()
 }
+
+async fn get_identity(session: Session) -> HttpResponse {
+    let access_token = session.get::<String>("access_token").unwrap();
+    if access_token.is_some() {
+        
+        match userdetails(access_token.clone().unwrap_or("".to_string())).await {
+            Ok((val)) => {    
+                dbg!(val);
+            },
+            Err(e) => {
+                dbg!(e);
+            },
+        };
+        let link ="logout"; 
+               let html = format!(
+                   r#"<html>
+                   <head><title>Identity</title></head>
+                   <body>
+                       {} <a href="/{}">{}</a>
+                   </body>
+               </html>"#,
+               access_token.unwrap_or("".to_string()),
+                   link,
+                   link
+               );
+           
+               HttpResponse::Ok().body(html)
+    }else{
+        let link = "login";
+        let html = format!(
+            r#"<html>
+            <head><title>Identity</title></head>
+            <body>
+                <a href="/{}">{}</a>
+            </body>
+        </html>"#,
+            link,
+            link
+        );
+    
+        HttpResponse::Ok().body(html)
+    }
+   
+}
+async fn userdetails(access_token:String) -> Result<serde_json::value::Value,awc::error::HttpError> {
+    
+    let token_val=format!("{}{}", String::from("token "), access_token);
+
+    let clientnew = awc::Client::new();
+   
+    let request = clientnew
+         .get("https://api.github.com/user")    // <- Create request builder
+         .insert_header(("User-Agent", "Actix-web"))
+         .insert_header(("accept", "application/json"))
+         .insert_header(("authorization", token_val.clone()));
+   
+
+         match request.send().await{
+            Ok((mut val)) => {
+
+                match val.body().await{
+                    Ok(bdy)=>{
+                        
+                        let v: Value=serde_json::from_slice(&bdy).unwrap();
+                        Ok(v)
+                      
+                    }
+                    Err(e) => {
+
+                       Err(e).unwrap()
+                       
+                    },
+                }
+            },
+            Err(e) => {
+                Err(e).unwrap()
+
+            },
+        }
+ 
+}
 #[derive(Deserialize)]
 struct AuthRequest {
     code: String,
     state: String,
 }
+/*#[derive(Deserialize, Debug)]
+pub struct UserInfo {
+    login: String,
+    avatar_url: String,
+    url: String,
+    organizations_url: String,
+    repos_url: String,
+    name: String,
+    company: String,
+    email: String,
+}*/
 
 async fn auth(
     session: Session,
@@ -95,8 +185,6 @@ let access_token;
                 </body>
             </html>"#,
             access_token
-            //token.access_token().clone().secret()
-            //code.secret()
             );
             HttpResponse::Ok().body(html)
         }else{
@@ -111,11 +199,6 @@ let access_token;
             </html>"#,);
             HttpResponse::Ok().body(html)
         }
-//token.
-    //let user_info = read_user(&data.api_base_url, token.access_token());
-    //session.insert("access_token", token.access_token()).unwrap();
-   
-
     
 }
 
@@ -162,6 +245,7 @@ async fn main() {
             .route("/login", web::get().to(login))
             .route("/logout", web::get().to(logout))
             .route("/auth", web::get().to(auth))
+            .route("/identity", web::get().to(get_identity))
     })
     .bind("localhost:9090")
     .expect("Can not bind to port 9090")
