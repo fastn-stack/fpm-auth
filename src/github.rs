@@ -131,6 +131,7 @@ params: actix_web::web::Query<AuthRequest>,
 let code = oauth2::AuthorizationCode::new(params.code.clone());
 let _state = oauth2::CsrfToken::new(params.state.clone());
 let access_token;
+
 // Exchange the code with a token.
 let token_res = &data.oauth
     .exchange_code(code)
@@ -139,30 +140,31 @@ let token_res = &data.oauth
     if let Ok(token) = token_res {
         access_token=token.access_token().clone().secret().to_string();
         session.insert("access_token", access_token.clone()).unwrap();
-        match userdetails(access_token.clone()).await {
+        let userresp=userdetails(access_token.clone()).await;
+        match userresp {
+            Ok(userresp) => {
+                return actix_web::HttpResponse::Ok().content_type("application/json")
+                .json(userresp);
+            }
+            Err(e) => {
+                return actix_web::HttpResponse::BadRequest().content_type("application/json")
+                .json(e.to_string());
+        }
+        }
+        /*match userdetails(access_token.clone()).await {
             Ok(val) => {    
                 //dbg!(val);
                 dbg!(val.get("login").clone());
+
             },
             Err(e) => {
                 dbg!(e);
             },
-        };
+        };*/
         //access_token.secret().to;
-        let html = format!(
-            r#"<html>
-            <head><title>OAuth2 Test</title></head>
-            <body>
-                Gitlab user info:
-                <pre>{}</pre>
-                <a href="/">Home</a>
-            </body>
-        </html>"#,
-        access_token
-        );
-        actix_web::HttpResponse::Ok().body(html)
+
     }else{
-        let html = format!(
+        /*let html = format!(
             r#"<html>
             <head><title>OAuth2 Test</title></head>
             <body>
@@ -171,7 +173,9 @@ let token_res = &data.oauth
                 <a href="/">Home</a>
             </body>
         </html>"#,);
-        actix_web::HttpResponse::Ok().body(html)
+        actix_web::HttpResponse::Ok().body(html)*/
+        return actix_web::HttpResponse::BadRequest().content_type("application/json")
+        .json("No user details found.");
     }
 
 }
