@@ -70,7 +70,7 @@ async fn main() {
             .route("/login", actix_web::web::get().to(github::login))
             .route("/logout", actix_web::web::get().to(github::logout))
             .route("/auth", actix_web::web::get().to(github::auth))
-            .route("/identity", actix_web::web::get().to(github::get_identity))
+            .route("/identity/{owner}/{repo}", actix_web::web::get().to(github::get_identity))
     })
     .bind("localhost:9090")
     .expect("Can not bind to port 9090")

@@ -24,48 +24,31 @@ actix_web::HttpResponse::Found()
     .append_header((actix_web::http::header::LOCATION, "/".to_string()))
     .finish()
 }
-
-pub async fn get_identity(session: actix_session::Session) -> actix_web::HttpResponse {
+#[derive(serde::Deserialize)]
+pub struct RepoParams {
+owner:String,    
+repo: String,
+}
+pub async fn get_identity(session: actix_session::Session,params: actix_web::web::Path<RepoParams>,) -> actix_web::HttpResponse {
 let access_token = session.get::<String>("access_token").unwrap();
 if access_token.is_some() {
-    
-    match userdetails(access_token.clone().unwrap_or("".to_string())).await {
-        Ok(val) => {
-            //dbg!(val.get("login").clone());    
-            dbg!(val);
-        },
-        Err(e) => {
-            dbg!(e);
-        },
-    };
-    let link ="logout"; 
-           let html = format!(
-               r#"<html>
-               <head><title>Identity</title></head>
-               <body>
-                   {} <a href="/{}">{}</a>
-               </body>
-           </html>"#,
-           access_token.unwrap_or("".to_string()),
-               link,
-               link
-           );
-       
-           actix_web::HttpResponse::Ok().body(html)
-}else{
-    let link = "login";
-    let html = format!(
-        r#"<html>
-        <head><title>Identity</title></head>
-        <body>
-            <a href="/{}">{}</a>
-        </body>
-    </html>"#,
-        link,
-        link
-    );
 
-    actix_web::HttpResponse::Ok().body(html)
+    let reporesp=getrepostarred(access_token.clone().unwrap_or("".to_string()),params.repo.clone(),params.owner.clone()).await;
+    match reporesp {
+        Ok(reporesp) => {
+            return actix_web::HttpResponse::Ok().content_type("application/json")
+            .json(reporesp);
+        }
+        Err(e) => {
+            return actix_web::HttpResponse::BadRequest().content_type("application/json")
+            .json(e.to_string());
+    }
+    }
+    
+
+}else{
+    return actix_web::HttpResponse::BadRequest().content_type("application/json")
+        .json("No record found.");
 }
 
 }
@@ -106,11 +89,59 @@ let request = clientnew
     }
 
 }
+async fn getrepostarred(access_token:String,repo_name:String,repo_owner:String) -> Result<serde_json::value::Value,awc::error::HttpError> {
+
+    let token_val=format!("{}{}", String::from("Bearer "), access_token);
+    let api_url=format!("{}{}{}", String::from("https://api.github.com/user/starred/"), repo_owner+"/",repo_name);
+    let clientnew = awc::Client::new();
+    
+    let request = clientnew
+         .get(api_url)    // <- Create request builder
+         .insert_header(("User-Agent", "Actix-web"))
+         .insert_header(("accept", "application/json"))
+         .insert_header(("authorization", token_val.clone()));
+    
+    
+         match request.send().await{
+            Ok(mut val) => {
+                match val.body().await{
+                    Ok(bdy)=>{
+                        
+                        //dbg!(bdy.clone());
+                        let v: serde_json::value::Value;
+                        if bdy.clone()==""
+                        {
+                            //dbg!(bdy.clone());
+                            v=serde_json::from_slice(b"
+                            {
+                                \"message\": \"Found\"
+                            }").unwrap();
+                        }else{
+                            v=serde_json::from_slice(&bdy).unwrap();
+                        }
+                        Ok(v)
+                        
+                    }
+                    Err(e) => {
+    
+                       Err(e).unwrap()
+                       
+                    },
+                }
+            },
+            Err(e) => {
+                Err(e).unwrap()
+    
+            },
+        }
+    
+}
 #[derive(serde::Deserialize)]
 pub struct AuthRequest {
 code: String,
 state: String,
 }
+
 /*#[derive(Deserialize, Debug)]
 pub struct UserInfo {
 login: String,
