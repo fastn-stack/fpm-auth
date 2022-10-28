@@ -56,14 +56,15 @@ actix_web::HttpResponse::Found()
 }
 #[derive(serde::Deserialize)]
 pub struct IdentityInput {
-    github_likes:String
+    github_starred:String
 }
 //pub async fn get_identity(session: actix_session::Session,params: actix_web::web::Path<RepoParams>,) -> actix_web::HttpResponse {
+
 pub async fn get_identity(session: actix_session::Session,params: actix_web::web::Query<IdentityInput>,) -> actix_web::HttpResponse {
 let access_token = session.get::<String>("access_token").unwrap();
 if access_token.is_some() {
 
-    let reporesp=getrepostarred(access_token.clone().unwrap_or("".to_string()),params.github_likes.clone()).await;
+    let reporesp=get_starred_repo(access_token.clone().unwrap_or("".to_string()),params.github_starred.clone()).await;
     match reporesp {
         Ok(reporesp) => {
             return actix_web::HttpResponse::Ok().content_type("application/json")
@@ -123,104 +124,71 @@ let token_res = &data.oauth
                 session.insert("user_login", userresp.get("login").clone()).unwrap();
                 session.insert("user_email", userresp.get("email").clone()).unwrap();
                 session.insert("user_fullname", userresp.get("name").clone()).unwrap();
-                //return actix_web::HttpResponse::Ok().content_type("application/json")
-                //.json(userresp);
+
             }
             Err(_) => {
-                //return actix_web::HttpResponse::BadRequest().content_type("application/json")
-                //.json(e.to_string());
         }
         }
     }else{
-        //return actix_web::HttpResponse::BadRequest().content_type("application/json")
-        //.json("No user details found.");
+
     }
     actix_web::HttpResponse::Found()
     .append_header((actix_web::http::header::LOCATION, "/auth/".to_string()))
     .finish()
 }
-async fn user_details(access_token:String) -> Result<serde_json::value::Value,awc::error::HttpError> {
+async fn user_details(access_token:String) -> Result<serde_json::value::Value,reqwest::Error> {
 
     let token_val=format!("{}{}", String::from("token "), access_token);
     
-    let clientnew = awc::Client::new();
-    
-    let request = clientnew
-         .get("https://api.github.com/user")    // <- Create request builder
-         .insert_header(("User-Agent", "Actix-web"))
-         .insert_header(("accept", "application/json"))
-         .insert_header(("authorization", token_val.clone()));
-    
-    
-         match request.send().await{
-            Ok(mut val) => {
-    
-                match val.body().await{
-                    Ok(bdy)=>{
-                        
-                        let v: serde_json::value::Value=serde_json::from_slice(&bdy).unwrap();
-                        Ok(v)
-                      
-                    }
-                    Err(e) => {
-    
-                       Err(e).unwrap()
-                       
-                    },
-                }
-            },
-            Err(e) => {
-                Err(e).unwrap()
-    
-            },
-        }
+    let request_obj=reqwest::Client::new()
+        .get("https://api.github.com/user")
+        .header(reqwest::header::AUTHORIZATION, token_val)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .header(reqwest::header::USER_AGENT, "Actix-web")
+        .send()
+        .await?;
+        let resp: serde_json::Value = request_obj.json().await?;
+        //dbg!(resp.clone());
+        
+        Ok(resp)
+        
     
     }
-    async fn getrepostarred(access_token:String,repo_name:String) -> Result<serde_json::value::Value,awc::error::HttpError> {
-    
+    async fn get_starred_repo(access_token:String,repo_name:String) -> Result<serde_json::value::Value,reqwest::Error> {
         let token_val=format!("{}{}", String::from("Bearer "), access_token);
-        //let api_url=format!("{}{}{}", String::from("https://api.github.com/user/starred/"), repo_owner+"/",repo_name);
         let api_url=format!("{}{}", String::from("https://api.github.com/user/starred/"),repo_name);
-        let clientnew = awc::Client::new();
-        
-        let request = clientnew
-             .get(api_url)    // <- Create request builder
-             .insert_header(("User-Agent", "Actix-web"))
-             .insert_header(("accept", "application/json"))
-             .insert_header(("authorization", token_val.clone()));
-        
-        
-             match request.send().await{
-                Ok(mut val) => {
-                    match val.body().await{
-                        Ok(bdy)=>{
-                            
-                            //dbg!(bdy.clone());
-                            let v: serde_json::value::Value;
-                            if bdy.clone()==""
-                            {
-                                //dbg!(bdy.clone());
-                                v=serde_json::from_slice(b"
+       // dbg!(token_val.clone());
+       // dbg!(api_url.clone());
+
+        let request_obj=reqwest::Client::new()
+        .get(api_url.clone())
+        .header(reqwest::header::AUTHORIZATION, token_val)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .header(reqwest::header::USER_AGENT, "Actix-web")
+        .send()
+        .await?;
+        match request_obj.status(){
+            reqwest::StatusCode::NO_CONTENT => {
+                let response_obj=serde_json::from_slice(b"
                                 {
                                     \"message\": \"Found\"
                                 }").unwrap();
-                            }else{
-                                v=serde_json::from_slice(&bdy).unwrap();
-                            }
-                            Ok(v)
-                            
-                        }
-                        Err(e) => {
-        
-                           Err(e).unwrap()
-                           
-                        },
-                    }
-                },
-                Err(e) => {
-                    Err(e).unwrap()
-        
-                },
+                                Ok(response_obj)
             }
+            reqwest::StatusCode::FORBIDDEN => {
+                let response_obj=serde_json::from_str("
+                                {
+                                    \"message\": \"Not Found\"
+                                }").unwrap();
+                                Ok(response_obj)
+            }
+            _ => {
+                let response_obj=serde_json::from_str("
+                                {
+                                    \"message\": \"Not Found\"
+                                }").unwrap();
+                                Ok(response_obj)
+            }
+        }
         
     }
