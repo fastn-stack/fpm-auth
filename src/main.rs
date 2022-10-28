@@ -5,26 +5,7 @@ mod gmail;
 mod slack;
 mod telegram;
 
-async fn index(session: actix_session::Session) -> actix_web::HttpResponse {
-    let access_token = session.get::<String>("access_token").unwrap();
-   
 
-    let link = if access_token.is_some() { "logout" } else { "login" };
-
-    let html = format!(
-        r#"<html>
-        <head><title>Github Test</title></head>
-        <body>
-            {} <a href="/{}">{}</a>
-        </body>
-    </html>"#,
-    access_token.unwrap_or("".to_string()),
-        link,
-        link
-    );
-
-    actix_web::HttpResponse::Ok().body(html)
-}
 
 
 #[actix_rt::main]
@@ -60,17 +41,18 @@ async fn main() {
             .wrap(
                 actix_session::SessionMiddleware::builder(actix_session::storage::CookieSessionStore::default(), actix_web::cookie::Key::from(&[0; 64]))
                     .cookie_secure(false)
-                    // customize session and cookie expiration
+
                     .session_lifecycle(
                         actix_session::config::PersistentSession::default().session_ttl(actix_web::cookie::time::Duration::hours(2)),
                     )
                     .build(),
             )
-            .route("/", actix_web::web::get().to(index))
-            .route("/login", actix_web::web::get().to(github::login))
-            .route("/logout", actix_web::web::get().to(github::logout))
-            .route("/auth", actix_web::web::get().to(github::auth))
-            .route("/identity/{owner}/{repo}", actix_web::web::get().to(github::get_identity))
+            .route("/auth/", actix_web::web::get().to(github::index))
+            .route("/auth/login", actix_web::web::get().to(github::login))
+            .route("/auth/logout", actix_web::web::get().to(github::logout))
+            .route("/auth/auth", actix_web::web::get().to(github::auth))
+            //.route("/auth/get-identities/{owner}/{repo}", actix_web::web::get().to(github::get_identity))
+            .route("/auth/get-identities", actix_web::web::get().to(github::get_identity))
     })
     .bind("localhost:9090")
     .expect("Can not bind to port 9090")
