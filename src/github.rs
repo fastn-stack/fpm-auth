@@ -6,20 +6,27 @@ pub struct AppState {
 }
 pub async fn index(session: actix_session::Session) -> actix_web::HttpResponse {
     let access_token = session.get::<String>("access_token").unwrap();
-   
-
-    let link = if access_token.is_some() { "logout" } else { "login" };
-
+    let user_login = session.get::<String>("user_login").unwrap();
+    let link = if access_token.is_some() { "auth/logout/" } else { "auth/login/" };
+    let link_title=if access_token.is_some() { "Logout"} else { "Login" };
+    let welcome_msg;
+    if user_login.is_some(){
+        welcome_msg=format!("{}{}","Hello ",user_login.clone().unwrap_or("".to_string()));
+    }else{
+        welcome_msg=String::from("Welcome. Please first login: ");
+    };
+    //let welcome_msg=if user_login.is_some() { if user_login.is_some(){user_login.clone()} } else { "Welcome. Please login first: " };
+    
     let html = format!(
         r#"<html>
-        <head><title>Github Test</title></head>
+        <head><title>FDM</title></head>
         <body>
             {} <a href="/{}">{}</a>
         </body>
     </html>"#,
-    access_token.unwrap_or("".to_string()),
+    welcome_msg,
         link,
-        link
+        link_title
     );
 
     actix_web::HttpResponse::Ok().body(html)
@@ -40,8 +47,11 @@ pub async fn login(data: actix_web::web::Data<AppState>) -> actix_web::HttpRespo
 
 pub async fn logout(session: actix_session::Session) -> actix_web::HttpResponse {
 session.remove("access_token");
+session.remove("user_login");
+session.remove("user_email");
+session.remove("user_fullname");
 actix_web::HttpResponse::Found()
-    .append_header((actix_web::http::header::LOCATION, "/".to_string()))
+    .append_header((actix_web::http::header::LOCATION, "/auth/".to_string()))
     .finish()
 }
 #[derive(serde::Deserialize)]
@@ -106,22 +116,28 @@ let token_res = &data.oauth
     if let Ok(token) = token_res {
         access_token=token.access_token().clone().secret().to_string();
         session.insert("access_token", access_token.clone()).unwrap();
+        
         let userresp=userdetails(access_token.clone()).await;
         match userresp {
             Ok(userresp) => {
-                return actix_web::HttpResponse::Ok().content_type("application/json")
-                .json(userresp);
+                session.insert("user_login", userresp.get("login").clone()).unwrap();
+                session.insert("user_email", userresp.get("email").clone()).unwrap();
+                session.insert("user_fullname", userresp.get("name").clone()).unwrap();
+                //return actix_web::HttpResponse::Ok().content_type("application/json")
+                //.json(userresp);
             }
-            Err(e) => {
-                return actix_web::HttpResponse::BadRequest().content_type("application/json")
-                .json(e.to_string());
+            Err(_) => {
+                //return actix_web::HttpResponse::BadRequest().content_type("application/json")
+                //.json(e.to_string());
         }
         }
     }else{
-        return actix_web::HttpResponse::BadRequest().content_type("application/json")
-        .json("No user details found.");
+        //return actix_web::HttpResponse::BadRequest().content_type("application/json")
+        //.json("No user details found.");
     }
-
+    actix_web::HttpResponse::Found()
+    .append_header((actix_web::http::header::LOCATION, "/auth/".to_string()))
+    .finish()
 }
 async fn userdetails(access_token:String) -> Result<serde_json::value::Value,awc::error::HttpError> {
 

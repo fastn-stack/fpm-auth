@@ -31,7 +31,7 @@ async fn main() {
             Some(token_url),
         )
         .set_redirect_uri(
-            oauth2::RedirectUrl::new("http://localhost:9090/auth".to_string()).expect("Invalid redirect URL"),
+            oauth2::RedirectUrl::new("http://localhost:9090/auth/auth/".to_string()).expect("Invalid redirect URL"),
         );
         actix_web::App::new()
         .app_data(actix_web::web::Data::new(github::AppState {
@@ -48,11 +48,11 @@ async fn main() {
                     .build(),
             )
             .route("/auth/", actix_web::web::get().to(github::index))
-            .route("/auth/login", actix_web::web::get().to(github::login))
-            .route("/auth/logout", actix_web::web::get().to(github::logout))
-            .route("/auth/auth", actix_web::web::get().to(github::auth))
+            .route("/auth/login/", actix_web::web::get().to(github::login))
+            .route("/auth/logout/", actix_web::web::get().to(github::logout))
+            .route("/auth/auth/", actix_web::web::get().to(github::auth))
             //.route("/auth/get-identities/{owner}/{repo}", actix_web::web::get().to(github::get_identity))
-            .route("/auth/get-identities", actix_web::web::get().to(github::get_identity))
+            .route("/auth/get-identities/", actix_web::web::get().to(github::get_identity))
     })
     .bind("localhost:9090")
     .expect("Can not bind to port 9090")
