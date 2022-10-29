@@ -4,6 +4,11 @@ use oauth2::{
 pub struct AppState {
     pub oauth: oauth2::basic::BasicClient,
 }
+#[derive(Debug)]
+pub struct RepoObj {
+    pub repo_owner:String,
+    pub repo_title:String
+}
 pub async fn index(session: actix_session::Session) -> actix_web::HttpResponse {
     let access_token = session.get::<String>("access_token").unwrap();
     let user_login = session.get::<String>("user_login").unwrap();
@@ -54,21 +59,65 @@ actix_web::HttpResponse::Found()
     .append_header((actix_web::http::header::LOCATION, "/auth/".to_string()))
     .finish()
 }
-#[derive(serde::Deserialize)]
+/*#[derive(serde::Deserialize)]
 pub struct IdentityInput {
     github_starred:String
-}
-//pub async fn get_identity(session: actix_session::Session,params: actix_web::web::Path<RepoParams>,) -> actix_web::HttpResponse {
-
-pub async fn get_identity(session: actix_session::Session,params: actix_web::web::Query<IdentityInput>,) -> actix_web::HttpResponse {
-let access_token = session.get::<String>("access_token").unwrap();
+}*/
+pub async fn get_identity(session: actix_session::Session,
+    req: actix_web::HttpRequest,) -> actix_web::HttpResponse {
+    let user_email = session.get::<String>("user_email").unwrap();
+    let user_login = session.get::<String>("user_login").unwrap();
+//pub async fn get_identity(session: actix_session::Session,url:actix_web::web::Path<String>) -> actix_web::HttpResponse {
+    //let mut repo_list: Vec<RepoObj> = Vec::new();
+    let mut repo_list: Vec<String> = Vec::new();
+    let access_token = session.get::<String>("access_token").unwrap();
+    let uri_string=req.uri();
+    let final_url:String=format!("{}{}","http://localhost:9090",uri_string.clone().to_string());
+    let request_url = url::Url::parse(&final_url.to_string()).unwrap();
+    let pairs = request_url.query_pairs();
+    for pair in pairs{
+        if pair.0=="github_starred"{
+            if !repo_list.contains(&pair.1.to_string()){
+                repo_list.push(pair.1.to_string());
+            }
+           
+        }
+    }
 if access_token.is_some() {
-
-    let reporesp=get_starred_repo(access_token.clone().unwrap_or("".to_string()),params.github_starred.clone()).await;
+let mut all_found_repo:String=String::from("");
+    let reporesp=get_starred_repo(access_token.clone().unwrap_or("".to_string()),&repo_list).await;
     match reporesp {
         Ok(reporesp) => {
-            return actix_web::HttpResponse::Ok().content_type("application/json")
-            .json(reporesp);
+            //return actix_web::HttpResponse::Ok().content_type("application/json")
+            //.json(reporesp);
+if reporesp.len()>0{
+    for repo in reporesp{
+        //all_found_repo
+        if all_found_repo==""{
+            all_found_repo=format!("{}{}","github-starred:",repo);
+        }else{
+            all_found_repo=format!("{}{}{}",all_found_repo,",",repo);
+        }
+        
+    }
+    
+}else{
+    all_found_repo=String::from("");
+}
+            
+            let html = format!(
+                r#"<html>
+                <head><title>FDM</title></head>
+                <body>
+                github-username:{}<br/>gmail-email:{}<br/>{}
+                </body>
+            </html>"#,
+            user_login.clone().unwrap_or("".to_string()),
+            user_email.clone().unwrap_or("".to_string()),
+            all_found_repo.clone(),
+            );
+        
+            actix_web::HttpResponse::Ok().body(html)
         }
         Err(e) => {
             return actix_web::HttpResponse::BadRequest().content_type("application/json")
@@ -89,19 +138,6 @@ pub struct AuthRequest {
 code: String,
 state: String,
 }
-
-/*#[derive(Deserialize, Debug)]
-pub struct UserInfo {
-login: String,
-avatar_url: String,
-url: String,
-organizations_url: String,
-repos_url: String,
-name: String,
-company: String,
-email: String,
-}*/
-
 pub async fn auth(
 session: actix_session::Session,
 data: actix_web::web::Data<AppState>,
@@ -148,15 +184,13 @@ async fn user_details(access_token:String) -> Result<serde_json::value::Value,re
         .send()
         .await?;
         let resp: serde_json::Value = request_obj.json().await?;
-        //dbg!(resp.clone());
-        
         Ok(resp)
-        
-    
     }
-    async fn get_starred_repo(access_token:String,repo_name:String) -> Result<serde_json::value::Value,reqwest::Error> {
+    async fn get_starred_repo(access_token:String,repo_list:&Vec<String>) -> Result<Vec<String>,reqwest::Error> {
         let token_val=format!("{}{}", String::from("Bearer "), access_token);
-        let api_url=format!("{}{}", String::from("https://api.github.com/user/starred/"),repo_name);
+        let mut starred_repo:Vec<String>=vec![];
+        //let api_url=format!("{}{}", String::from("https://api.github.com/user/starred/"),repo_name);
+        let api_url=format!("{}", String::from("https://api.github.com/user/starred"));
         let request_obj=reqwest::Client::new()
         .get(api_url.clone())
         .header(reqwest::header::AUTHORIZATION, token_val)
@@ -164,28 +198,19 @@ async fn user_details(access_token:String) -> Result<serde_json::value::Value,re
         .header(reqwest::header::USER_AGENT, "Actix-web")
         .send()
         .await?;
-        match request_obj.status(){
-            reqwest::StatusCode::NO_CONTENT => {
-                let response_obj=serde_json::from_slice(b"
-                                {
-                                    \"message\": \"Found\"
-                                }").unwrap();
-                                Ok(response_obj)
-            }
-            reqwest::StatusCode::FORBIDDEN => {
-                let response_obj=serde_json::from_str("
-                                {
-                                    \"message\": \"Not Found\"
-                                }").unwrap();
-                                Ok(response_obj)
-            }
-            _ => {
-                let response_obj=serde_json::from_str("
-                                {
-                                    \"message\": \"Not Found\"
-                                }").unwrap();
-                                Ok(response_obj)
-            }
+        let resp:serde_json::Value = request_obj.json().await?;
+       
+        if resp.as_array().unwrap().len()>0
+        {
+        for repo in repo_list{
+        for respobj in resp.as_array().unwrap().iter(){
+        if repo==respobj.get("full_name").unwrap(){
+           starred_repo.push(respobj.get("full_name").unwrap().to_string());
         }
+        }
+        }
+        }
+        Ok(starred_repo)
+     
         
     }
