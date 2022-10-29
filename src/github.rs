@@ -157,9 +157,6 @@ async fn user_details(access_token:String) -> Result<serde_json::value::Value,re
     async fn get_starred_repo(access_token:String,repo_name:String) -> Result<serde_json::value::Value,reqwest::Error> {
         let token_val=format!("{}{}", String::from("Bearer "), access_token);
         let api_url=format!("{}{}", String::from("https://api.github.com/user/starred/"),repo_name);
-       // dbg!(token_val.clone());
-       // dbg!(api_url.clone());
-
         let request_obj=reqwest::Client::new()
         .get(api_url.clone())
         .header(reqwest::header::AUTHORIZATION, token_val)
